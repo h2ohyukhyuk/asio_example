@@ -3,7 +3,14 @@ This Boost ASIO example shows how to communicate images and some information bet
 
 ## Perequisites
   - OS
-
+  ```bash
+  $ lsb_release -a
+  No LSB modules are available.
+  Distributor ID:	Ubuntu
+  Description:	Ubuntu 18.04.6 LTS
+  Release:	18.04
+  Codename:	bionic
+  ```
   - cmake
   ```bash
   $ sudo apt-get install libssl-dev openssl
