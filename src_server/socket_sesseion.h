@@ -15,7 +15,7 @@ class session
 {
 public:
     enum { max_length = 1024*1024*1024 };
-    
+
     session(boost::asio::io_service& io_service)
     //boost 1.66이후 (Ubuntu 18.10 이후) 버전의 경우 io_context를 사용
     //session(boost::asio::io_context& io_service)
@@ -72,7 +72,13 @@ private:
                 char* pEnd = data + end;
 
                 //std::cout<<"PacketHeader size: "<<sizeof(PacketHeader)<<std::endl;
-                //std::cout<<"bytes_transferred size: "<<bytes_transferred<<std::endl;                
+                static int sum = 0;
+                static int cnt = 0;
+                sum += bytes_transferred;
+                cnt++;
+
+                if(cnt % 30 == 0)
+                    std::cout<<"bytes_transferred size: "<<bytes_transferred<<" total: "<<sum<<std::endl;                
                 
 
                 if( strncmp(pEnd, "end", 3) == 0){
@@ -85,13 +91,19 @@ private:
                         int cameraID = -1;
                         int timeCode = -1;
 
-                        parseImagePacket(pImageData, img, cameraID, timeCode);
-                        cv::imwrite("./image.jpg", img);
+                        //parseImagePacket(pImageData, img, cameraID, timeCode);
+                        //cv::imwrite("./image.jpg", img);
                         
                         // cv::imshow("server", img);
                         // cv::waitKey(1);
                     }
                 }
+                else{
+                    std::cout<<"not end"<<std::endl;
+                }
+            }
+            else{
+                std::cout<<"not begin"<<std::endl;
             }
             
             read();

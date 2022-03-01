@@ -36,6 +36,21 @@ This Boost ASIO example shows how to communicate images and some information bet
   $ pkg-config --modversion opencv
   3.2.0
   ```
+## Socket buff
+  - check current buffer size
+  ```bash
+  $ sysctl -a | grep "net.core.rmem\|net.core.wmem"
+  $ cat /proc/sys/net/ipv4/tcp_rmem
+  $ cat /proc/sys/net/ipv4/tcp_wmem
+  ```
+
+  - modify buffer size to 32MBytes
+  ```bash
+  $ sudo sysctl -w net.core.rmem_default=33554432
+  $ sudo sysctl -w net.core.rmem_max=33554432
+  $ sudo sysctl -w net.core.wmem_default=33554432
+  $ sudo sysctl -w net.core.wmem_max=33554432
+  ```
 
 ## Build
 ```bash

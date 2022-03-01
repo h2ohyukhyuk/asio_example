@@ -11,111 +11,165 @@
 #include <opencv2/opencv.hpp>
 #include "../common/packet.h"
 
+using namespace boost::asio;
 using boost::asio::ip::tcp;
 
 const size_t max_length = 1024;
 
 
-class Client{
+class Client : public std::enable_shared_from_this<Client>{
     public:
+    typedef boost::system::error_code error_code;
+    typedef boost::shared_ptr<Client> ptr;
+
     Client(const std::string& host, const std::string& port)
-            : socket_(this->io_context), resolver(this->io_context), stopped_(true)
+            : socket_(service_), resolver(service_), started_(true)
             {
                 serverHost = host;
                 serverPort = port;
+                writingTrigerThreadPtr_ = nullptr;
             }
-    ~Client(){}
+    ~Client(){
+        if(writingTrigerThreadPtr_ != nullptr && writingTrigerThreadPtr_->joinable())
+            writingTrigerThreadPtr_->join();
 
-    void connect(){
+    }
+
+    void start(){
         tcp::resolver::query query(serverHost, serverPort);
         tcp::resolver::iterator endpointIter = resolver.resolve(query);
 
         auto completedHandler = 
-        boost::bind(&Client::handle_connected, this, boost::asio::placeholders::error);
+        boost::bind(&Client::handle_connected, shared_from_this(), boost::asio::placeholders::error);
 
         boost::asio::async_connect(socket_, endpointIter, completedHandler);
     }
 
-    void run(){
-        io_context.run();
-    }
-
     void stop(){
-        stopped_ = true;
+        if(!started_)
+            return;
+        started_ = false;
         socket_.close();
-        //deadline_.cancel();
     }
 
-    bool isConnected(){
-        return !stopped_;
+    void run(){
+        service_.run();
     }
 
-    void handle_connected(const boost::system::error_code& e){
+    bool started(){
+        return started_;
+    }
 
-        if(!socket_.is_open())
-        {
-            std::cout << "Connect timed out\n";
-
-            // Try the next available endpoint.
-            //start_connect(++endpoint_iter);
-        }
-        else if(e){
-            std::cerr<<"connection failed: "<<e<<std::endl;
-            stopped_ = true;
+    void queue(std::shared_ptr<char> packet){
+        lockObj.lock();
+        if(packets_.size() < 100){
+            packets_.push(packet);
         }
         else{
-             std::cout<<"connected to server!"<<std::endl;
-             stopped_ = false;
+            packets_.pop();
+            packets_.push(packet);
+            std::cout<<"packet queue overflow"<<std::endl;
         }
-    }
-
-    void write(std::shared_ptr<char> packet){
-
-        //pushPacket(packet);
-        PacketHeader* pHeader = reinterpret_cast<PacketHeader*>(packet.get());
-        const size_t length = sizeof(PacketHeader) + pHeader->dataSize;
-        //std::cout<<"data length: "<<pHeader->dataSize<<std::endl;
-        
-        const auto& buf = boost::asio::buffer(packet.get(), length);
-        auto completedHandler = 
-        boost::bind(&Client::handle_write, this, boost::asio::placeholders::error);
-
-        boost::asio::async_write(socket_, buf, completedHandler);
+        //std::cout<<"packet queue size: "<<packets_.size()<<std::endl;
+        lockObj.unlock();
     }
 
     private:
-
-        void pushPacket(std::shared_ptr<char> packet){
-            lockObj.lock();
-            queuePacket.push(packet);
-            lockObj.unlock();
+        void do_read(){
+            const auto& buf = boost::asio::buffer(read_buffer_);
+            auto completedHandler = 
+            boost::bind(&Client::handle_read, shared_from_this(), _1, _2);
+            socket_.async_read_some(buf, completedHandler);
         }
 
-        void popPacket(){
-            lockObj.lock();
-            queuePacket.pop();
-            lockObj.unlock();
+        void do_write(){
+            
+            std::shared_ptr<char> packet = dequeue();
+            while(packet == nullptr && started()){                
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                packet = dequeue();
+            }
+
+            if(!started())
+                return;
+
+            PacketHeader* pHeader = reinterpret_cast<PacketHeader*>(packet.get());
+            const size_t length = sizeof(PacketHeader) + pHeader->dataSize;
+
+            static int sum = 0;
+            sum += length;
+            std::cout<<"write len: "<< length <<" total: "<< sum <<std::endl;
+            memcpy(write_buffer_, packet.get(), length);        
+            
+            const auto& buf = boost::asio::buffer(write_buffer_, length);
+            auto completedHandler = 
+            boost::bind(&Client::handle_write, shared_from_this(), boost::asio::placeholders::error);
+
+            boost::asio::async_write(socket_, buf, completedHandler);            
         }
-        
+
+        void handle_connected(const boost::system::error_code& e){
+            if(e){
+                std::cerr<<"connection failed: "<<e<<std::endl;
+                std::cerr<<"retry connection: "<<std::endl;
+                std::this_thread::sleep_for(std::chrono::seconds(5));
+                start();
+                //stop();
+            }
+            else{
+                std::cout<<"connected to server!"<<std::endl;
+                started_ = true;
+                do_read();                
+                writingTrigerThreadPtr_ = 
+                std::make_shared<std::thread>(&Client::do_write, shared_from_this());
+            }
+        }
+
+        void handle_read(const boost::system::error_code& e, size_t bytes){
+
+            if(!started())
+                return;
+            //processing(read_buffer_, bytes);
+            //do_read();
+        }
+
         void handle_write(const boost::system::error_code& e){
             if(e){
                 std::cerr<<"socket write error: "<<e<<std::endl;
             }
             else{
-                std::cout<<"write done"<<std::endl;
+                // std::cout<<"write done"<<std::endl;
+                do_write();
             }
-            
-            //popPacket();
         }
 
-        bool stopped_;
-        boost::asio::io_service io_context;
+        std::shared_ptr<char> dequeue(){
+            lockObj.lock();
+            if(packets_.empty()){
+                lockObj.unlock();
+                return nullptr;
+            }
+            else{
+                std::shared_ptr<char> v = packets_.front();
+                packets_.pop();
+                lockObj.unlock();
+                return v;
+            }
+        }
+
+        boost::asio::io_service service_;
         tcp::socket socket_;
         tcp::resolver resolver;
         std::string serverHost;
         std::string serverPort;
-        std::queue<std::shared_ptr<char>> queuePacket;
+        bool started_;
+        enum { max_msg = 32*1024*1024 };
+        char read_buffer_[max_msg];
+        char write_buffer_[max_msg];
+
+        std::shared_ptr<std::thread> writingTrigerThreadPtr_;
         std::mutex lockObj;
+        std::queue<std::shared_ptr<char>> packets_;
 };
 
 int main(int argc, char* argv[])
@@ -128,33 +182,45 @@ int main(int argc, char* argv[])
             return 1;
         }
 
-        Client client(argv[1], argv[2]);
-        client.connect();
-        client.run();
+        const std::string host(argv[1]);
+        const std::string port(argv[2]);
+        std::shared_ptr<Client> clientPtr = std::make_shared<Client>(host, port);
+        
+        std::thread socketThred([](std::shared_ptr<Client> clientPtr){
+            clientPtr->start();
+            clientPtr->run();
 
+        }, clientPtr);
         
         size_t cnt = 0;
 
+        /*
+        125MBPS
+        image = 128x128 = 16KB
+        12500
+        */
         while(true){
 
-            const int cameraID = 0;
-            const int timeCode = 0;
-            
-            cv::Mat img = cv::Mat::zeros(200, 200, CV_8UC3);
-            cv::putText(img, std::to_string(cnt), cv::Point(20, 50), cv::FONT_HERSHEY_COMPLEX, 1.5, cv::Scalar(200, 70, 125), 4);
+            cv::Mat img = cv::Mat::zeros(128, 128, CV_8UC3);
+            cv::putText(img, std::to_string(cnt), cv::Point(20, 50), cv::FONT_HERSHEY_COMPLEX, 1.0, cv::Scalar(200, 70, 125), 4);
 
-            auto packet = makeImagePacket(cameraID, timeCode, img);
+            auto packet = makeImagePacket(0, 0, img);
 
             if(packet == nullptr)
                 continue;
 
-            client.write(packet);
+            clientPtr->queue(packet);
 
             cnt++;
             //std::this_thread::sleep_for(std::chrono::seconds(2));
             cv::imshow("client", img);
-            cv::waitKey(100);
+            int key = cv::waitKey(100);
+            if(key == 113)
+                break;
         }
+
+        clientPtr->stop();
+        socketThred.join();
 
     }catch(std::exception& e){
         std::cerr<<e.what()<<std::endl;
