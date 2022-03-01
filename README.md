@@ -9,3 +9,21 @@ This Boost ASIO example shows how to communicate images and some information bet
   Version: 1.65.1.0ubuntu1
   ```
 
+## Build
+```bash
+  $ cd asio_example
+  $ mkdir build
+  $ cd build
+  $ cmake ..
+  $ make
+```
+
+## Run
+  - server
+  ```bash
+  $ ./server 8080
+  ```
+  - client
+  ```bash
+  $ ./client 127.0.0.1 8080
+  ```
