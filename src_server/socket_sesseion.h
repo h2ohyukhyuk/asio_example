@@ -14,19 +14,24 @@ using boost::asio::ip::tcp;
 class session
 {
 public:
-    enum { max_length = 1024*1024*1024 };
+    enum { max_length = 256*1024*1024 };
 
     session(boost::asio::io_service& io_service)
     //boost 1.66이후 (Ubuntu 18.10 이후) 버전의 경우 io_context를 사용
     //session(boost::asio::io_context& io_service)
     : socket_(io_service)
     {
-        
     }
 
     void set_bufsize(int a){
         boost::asio::socket_base::receive_buffer_size option(a);
         socket_.set_option(option);
+    }
+
+    int print_bufsize(){
+        boost::asio::socket_base::receive_buffer_size option;
+        socket_.get_option(option);
+        std::cout<<"receive buf size: "<<option.value()/(1024*1024)<<"MB"<<std::endl;
     }
  
     tcp::socket& socket()
@@ -66,19 +71,16 @@ private:
 
                 // std::cout<<"purpose: "<< pHeader->purpose <<std::endl;
                 // std::cout<<"dataSize: "<< pHeader->dataSize <<std::endl;
-                size_t end = pHeader->dataSize + sizeof(PacketHeader) - 4;
-
-
-                char* pEnd = data + end;
-
+                char* pEnd = data + sizeof(PacketHeader) + pHeader->dataSize - 3;
+                //std::cout<<pEnd[0]<<pEnd[1]<<pEnd[2]<<std::endl;
                 //std::cout<<"PacketHeader size: "<<sizeof(PacketHeader)<<std::endl;
                 static int sum = 0;
                 static int cnt = 0;
                 sum += bytes_transferred;
                 cnt++;
 
-                if(cnt % 30 == 0)
-                    std::cout<<"bytes_transferred size: "<<bytes_transferred<<" total: "<<sum<<std::endl;                
+                
+                //std::cout<<"bytes_transferred size: "<<bytes_transferred<<" total: "<<sum<<std::endl;                
                 
 
                 if( strncmp(pEnd, "end", 3) == 0){

@@ -37,7 +37,7 @@ private:
     }
     else
     {
-        //new_session->set_bufsize(session::max_length);
+        new_session->print_bufsize();
         new_session->read();
     }
     //client로부터 접속이 끊겼을 대 다시 대기한다.
@@ -50,6 +50,7 @@ private:
   tcp::acceptor acceptor_;
 };
  
+ #if 1
 int main(int argc, char* argv[])
 {
   try
@@ -65,6 +66,7 @@ int main(int argc, char* argv[])
     //boost::asio::io_context io_service;
  
     server s(io_service, atoi(argv[1]));
+
     //asio 통신을 시작한다.
     io_service.run();
   }
@@ -75,3 +77,41 @@ int main(int argc, char* argv[])
  
   return 0;
 }
+#else
+#include <boost/format.hpp>
+
+using boost::asio::ip::tcp;
+using boost::format;
+using namespace std;
+
+int main()
+{
+    try
+    {
+        boost::asio::io_service io_service;
+        tcp::socket socket(io_service, tcp::endpoint(tcp::v4(), 0));
+        tcp::resolver resolver(io_service);
+        tcp::resolver::query query(tcp::v4(), "localhost", "7770");
+        tcp::resolver::iterator iterator = resolver.resolve(query);
+
+        boost::system::error_code error_code;
+        socket.set_option(boost::asio::socket_base::send_buffer_size(128*1024*1024), error_code);
+        cout << error_code << endl;
+        boost::asio::socket_base::send_buffer_size send_buffer_size;
+        socket.get_option(send_buffer_size);
+        cout << format("send_buffer_size=%s") % send_buffer_size.value() << endl;
+
+        socket.set_option(boost::asio::socket_base::receive_buffer_size(128*1024*1024), error_code);
+        cout << error_code << endl;
+        boost::asio::socket_base::receive_buffer_size receive_buffer_size;
+        socket.get_option(receive_buffer_size);
+        cout << format("receive_buffer_size=%s") % receive_buffer_size.value() << endl;
+    }
+    catch (std::exception& e)
+    {
+        std::cerr << "Exception: " << e.what() << "\n";
+    }
+
+    return 0;
+}
+#endif

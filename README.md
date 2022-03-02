@@ -46,10 +46,34 @@ This Boost ASIO example shows how to communicate images and some information bet
 
   - modify buffer size to 32MBytes
   ```bash
-  $ sudo sysctl -w net.core.rmem_default=33554432
-  $ sudo sysctl -w net.core.rmem_max=33554432
-  $ sudo sysctl -w net.core.wmem_default=33554432
-  $ sudo sysctl -w net.core.wmem_max=33554432
+
+sudo sysctl -w net.ipv4.tcp_window_scaling="1"
+sudo sysctl -w net.core.rmem_default="85395200"
+sudo sysctl -w net.core.wmem_default="85395200"
+sudo sysctl -w net.core.rmem_max="85395200"
+sudo sysctl -w net.core.wmem_max="853952000"
+sudo sysctl -w net.ipv4.tcp_rmem="853952000 853952000 853952000"
+sudo sysctl -w net.ipv4.tcp_wmem="85395200 85395200 85395200"
+sudo sysctl -w net.ipv4.tcp_mem="8388608 8388608 8388608"
+
+sudo sysctl -w net.ipv4.tcp_window_scaling="1"
+sudo sysctl -w net.core.rmem_default="1073725440"
+sudo sysctl -w net.core.wmem_default="1073725440"
+sudo sysctl -w net.core.rmem_max="1073725440"
+sudo sysctl -w net.core.wmem_max="1073725440"
+sudo sysctl -w net.ipv4.tcp_rmem="85395200 1073725440 1073725440"
+sudo sysctl -w net.ipv4.tcp_wmem="85395200 1073725440 1073725440"
+sudo sysctl -w net.ipv4.tcp_mem="8388608 8388608 8388608"
+
+  $ sudo gedit /etc/sysctl.conf
+  net.core.rmem_default="1073725440"
+  net.core.wmem_default="1073725440"
+  net.core.rmem_max="1073725440"
+  net.core.wmem_max="1073725440"
+  net.ipv4.tcp_rmem="85395200 1073725440 1073725440"
+  net.ipv4.tcp_wmem="85395200 1073725440 1073725440"
+  net.ipv4.tcp_mem="8388608 8388608 8388608"
+  net.ipv4.tcp_window_scaling="1"
   ```
 
 ## Build

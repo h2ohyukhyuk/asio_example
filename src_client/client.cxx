@@ -23,16 +23,12 @@ class Client : public std::enable_shared_from_this<Client>{
     typedef boost::shared_ptr<Client> ptr;
 
     Client(const std::string& host, const std::string& port)
-            : socket_(service_), resolver(service_), started_(true)
+            : socket_(service_), resolver(service_), started_(false)
             {
                 serverHost = host;
                 serverPort = port;
-                writingTrigerThreadPtr_ = nullptr;
             }
     ~Client(){
-        if(writingTrigerThreadPtr_ != nullptr && writingTrigerThreadPtr_->joinable())
-            writingTrigerThreadPtr_->join();
-
     }
 
     void start(){
@@ -46,8 +42,6 @@ class Client : public std::enable_shared_from_this<Client>{
     }
 
     void stop(){
-        if(!started_)
-            return;
         started_ = false;
         socket_.close();
     }
@@ -68,7 +62,7 @@ class Client : public std::enable_shared_from_this<Client>{
         else{
             packets_.pop();
             packets_.push(packet);
-            std::cout<<"packet queue overflow"<<std::endl;
+            //std::cout<<"packet queue overflow"<<std::endl;
         }
         //std::cout<<"packet queue size: "<<packets_.size()<<std::endl;
         lockObj.unlock();
@@ -114,14 +108,14 @@ class Client : public std::enable_shared_from_this<Client>{
                 std::cerr<<"retry connection: "<<std::endl;
                 std::this_thread::sleep_for(std::chrono::seconds(5));
                 start();
-                //stop();
             }
             else{
                 std::cout<<"connected to server!"<<std::endl;
                 started_ = true;
-                do_read();                
-                writingTrigerThreadPtr_ = 
-                std::make_shared<std::thread>(&Client::do_write, shared_from_this());
+                do_read();
+                
+                std::thread writeTrigger(&Client::do_write, shared_from_this());
+                writeTrigger.detach();
             }
         }
 
@@ -129,8 +123,21 @@ class Client : public std::enable_shared_from_this<Client>{
 
             if(!started())
                 return;
-            //processing(read_buffer_, bytes);
-            //do_read();
+            
+            if((boost::asio::error::eof == e) ||
+                (boost::asio::error::connection_reset == e)){
+                std::cerr<<"socket disconnected:"<< e << std::endl;
+                started_ = false;                
+                start();
+            }
+            else if(e){
+                std::cerr<<"socket read header error: "<< e << std::endl;                
+            }
+            else
+            {
+                //processing(read_buffer_, bytes);
+                do_read();
+            }
         }
 
         void handle_write(const boost::system::error_code& e){
@@ -167,7 +174,6 @@ class Client : public std::enable_shared_from_this<Client>{
         char read_buffer_[max_msg];
         char write_buffer_[max_msg];
 
-        std::shared_ptr<std::thread> writingTrigerThreadPtr_;
         std::mutex lockObj;
         std::queue<std::shared_ptr<char>> packets_;
 };
@@ -199,24 +205,44 @@ int main(int argc, char* argv[])
         image = 128x128 = 16KB
         12500
         */
+        cv::Mat imgTest = cv::imread("../images/test.bmp");
+        cv::resize(imgTest, imgTest, cv::Size(320, 240));
+        std::vector<int> qualityType;
+        qualityType.push_back(CV_IMWRITE_JPEG_QUALITY);
+        qualityType.push_back(80);
+        /*
+        49152 = 128*128*3 = 48KB
+        230400 = 320x240 = 225KB
+        23082 = jpeg = 22KB
+        
+        */
+
         while(true){
 
-            cv::Mat img = cv::Mat::zeros(128, 128, CV_8UC3);
-            cv::putText(img, std::to_string(cnt), cv::Point(20, 50), cv::FONT_HERSHEY_COMPLEX, 1.0, cv::Scalar(200, 70, 125), 4);
+            for( size_t i = 0; i < 8; ++i){
+                cv::Mat img = imgTest.clone();            
+                cv::putText(img, std::to_string(cnt), cv::Point(20, 50), cv::FONT_HERSHEY_COMPLEX, 1.0, cv::Scalar(200, 70, 125), 4);
 
-            auto packet = makeImagePacket(0, 0, img);
+                std::vector<uchar> bufJPEG;
+                cv::imencode(".jpg", img, bufJPEG, qualityType);
 
-            if(packet == nullptr)
-                continue;
+                //std::cout<<"size jpeg buf: "<< bufJPEG.size() << std::endl;
+                //std::cout<<"size img: "<< img.rows * img.cols * img.channels() <<std::endl;
 
-            clientPtr->queue(packet);
+                auto packet = makeJpgImagePacket(0, 0, bufJPEG);
 
-            cnt++;
-            //std::this_thread::sleep_for(std::chrono::seconds(2));
-            cv::imshow("client", img);
-            int key = cv::waitKey(100);
-            if(key == 113)
-                break;
+                if(packet == nullptr)
+                    continue;
+
+                clientPtr->queue(packet);
+                cnt++;
+                // cv::imshow("client", img);
+                // int key = cv::waitKey(200);
+                // if(key == 113)
+                //     break;
+            }
+            
+            std::this_thread::sleep_for(std::chrono::milliseconds(200)); // 5 FPS
         }
 
         clientPtr->stop();
@@ -225,5 +251,4 @@ int main(int argc, char* argv[])
     }catch(std::exception& e){
         std::cerr<<e.what()<<std::endl;
     }
-
 }

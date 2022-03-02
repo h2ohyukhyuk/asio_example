@@ -35,12 +35,13 @@ struct Joint2DData
 
 enum PacketPurpose{
     Image = 0,
-    ImageJoint2D = 1,
-
+    ImageJpeg = 1,
+    ImageJoint2D = 2,
 };
 
 void charArrayDeletor(char* x);
 std::shared_ptr<char> makeImagePacket(const int cameraID, const int timeCode, const cv::Mat& img);
+std::shared_ptr<char> makeJpgImagePacket(const int cameraID, const int timeCode, const std::vector<uchar>& data);
 std::shared_ptr<char> makeImageJoint2DPacket(const int cameraID, const int timeCode, const cv::Mat& img, std::vector<std::array<float, 2>> joint2Ds);
 
 
