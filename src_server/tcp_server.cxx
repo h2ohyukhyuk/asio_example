@@ -23,6 +23,14 @@ class Server
             io_service_.post(boost::bind(&Server::handle_stop, this));
         }
 
+        std::string adress(){
+            return acceptor_.local_endpoint().address().to_string();
+        }
+
+        std::string port(){
+            return std::to_string(acceptor_.local_endpoint().port());
+        }
+
     private:
         void start_accept(){
             std::shared_ptr<Session> new_session(new Session(io_service_, sess_manager, receiveBuffPtr_));
@@ -46,7 +54,7 @@ class Server
             else
             {
                 std::string address = new_session->endpoint();
-                std::cout<<"connected: "<<address<<std::endl;
+                std::cout<<"connected client: "<<address<<std::endl;
 
                 new_session->set_start();
                 new_session->print_bufsize();
@@ -86,6 +94,8 @@ int main(int argc, char* argv[])
                 serverPtr->run();
 
             }, serverPtr);
+
+        std::cout<<"server started @ "<<serverPtr->adress()<<":"<<serverPtr->port()<<std::endl;
 
         while(true){
             packet_type packet = receiveBuffPtr->dequeue();
