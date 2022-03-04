@@ -13,25 +13,26 @@
 
 using namespace boost::asio;
 using boost::asio::ip::tcp;
-
-const size_t max_length = 1024;
-
+using std::chrono::duration_cast;
+using std::chrono::milliseconds;
+using std::chrono::system_clock;
 
 class Client : public std::enable_shared_from_this<Client>{
     public:
     typedef boost::system::error_code error_code;
-    typedef boost::shared_ptr<Client> ptr;
 
-    Client(const std::string& host, const std::string& port)
-            : socket_(service_), resolver(service_), started_(false)
-            {
-                serverHost = host;
-                serverPort = port;
-            }
+    Client(const std::string& host, const std::string& port,            
+            std::shared_ptr<PacketReceiveBuffer>& receivePacketBuffer)
+            : socket_(service_), resolver(service_), serverHost(host), serverPort(port),
+            receivePacketBuffer_(receivePacketBuffer), sendPacketBuffer_(50), started_(false)
+            {}
     ~Client(){
     }
 
     void start(){
+        if(started())
+            return;
+
         tcp::resolver::query query(serverHost, serverPort);
         tcp::resolver::iterator endpointIter = resolver.resolve(query);
 
@@ -42,8 +43,10 @@ class Client : public std::enable_shared_from_this<Client>{
     }
 
     void stop(){
-        started_ = false;
-        socket_.close();
+        if(!started())
+            return;
+       
+        service_.post(boost::bind(&Client::do_close, shared_from_this()));
     }
 
     void run(){
@@ -51,136 +54,176 @@ class Client : public std::enable_shared_from_this<Client>{
     }
 
     bool started(){
-        return started_;
+        return started_.load();
     }
 
-    void queue(std::shared_ptr<char> packet){
-        lockObj.lock();
-        if(packets_.size() < 100){
-            packets_.push(packet);
+    std::string address(){
+        if(socket_.is_open()){            
+            return socket_.local_endpoint().address().to_string();
         }
-        else{
-            packets_.pop();
-            packets_.push(packet);
-            //std::cout<<"packet queue overflow"<<std::endl;
+        
+        return "";
+    }
+
+    std::string port(){
+        if(socket_.is_open()){                
+            //std::string address =  socket_.local_endpoint().address().to_string();
+            std::string port = std::to_string(socket_.local_endpoint().port());
+            return port;            
         }
-        //std::cout<<"packet queue size: "<<packets_.size()<<std::endl;
-        lockObj.unlock();
+        
+        return "";
+    }
+
+    void write(const packet_type& packet){
+        if(!started())
+            return;
+
+        service_.post(boost::bind(&Client::do_write, shared_from_this(), packet));
     }
 
     private:
-        void do_read(){
-            const auto& buf = boost::asio::buffer(read_buffer_);
-            auto completedHandler = 
-            boost::bind(&Client::handle_read, shared_from_this(), _1, _2);
-            socket_.async_read_some(buf, completedHandler);
-        }
-
-        void do_write(){
-            
-            std::shared_ptr<char> packet = dequeue();
-            while(packet == nullptr && started()){                
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                packet = dequeue();
-            }
-
-            if(!started())
-                return;
-
-            PacketHeader* pHeader = reinterpret_cast<PacketHeader*>(packet.get());
-            const size_t length = sizeof(PacketHeader) + pHeader->dataSize;
-
-            static int sum = 0;
-            sum += length;
-            std::cout<<"write len: "<< length <<" total: "<< sum <<std::endl;
-            memcpy(write_buffer_, packet.get(), length);        
-            
-            const auto& buf = boost::asio::buffer(write_buffer_, length);
-            auto completedHandler = 
-            boost::bind(&Client::handle_write, shared_from_this(), boost::asio::placeholders::error);
-
-            boost::asio::async_write(socket_, buf, completedHandler);            
-        }
-
         void handle_connected(const boost::system::error_code& e){
             if(e){
                 std::cerr<<"connection failed: "<<e<<std::endl;
                 std::cerr<<"retry connection: "<<std::endl;
                 std::this_thread::sleep_for(std::chrono::seconds(5));
-                start();
+                start(); // retry connect
             }
             else{
                 std::cout<<"connected to server!"<<std::endl;
-                started_ = true;
+                started_.store(true);
                 do_read();
-                
-                std::thread writeTrigger(&Client::do_write, shared_from_this());
-                writeTrigger.detach();
             }
         }
 
-        void handle_read(const boost::system::error_code& e, size_t bytes){
+        void do_close(){
+            started_.store(false);
+            socket_.close();
+        }
 
-            if(!started())
-                return;
-            
-            if((boost::asio::error::eof == e) ||
-                (boost::asio::error::connection_reset == e)){
-                std::cerr<<"socket disconnected:"<< e << std::endl;
-                started_ = false;                
-                start();
-            }
-            else if(e){
-                std::cerr<<"socket read header error: "<< e << std::endl;                
-            }
-            else
-            {
-                //processing(read_buffer_, bytes);
-                do_read();
+        void do_write(packet_type packet){
+            if( sendPacketBuffer_.is_first(packet)){
+                
+                PacketHeader* pH = reinterpret_cast<PacketHeader*>(sendPacketBuffer_.front().get());
+                auto data = reinterpret_cast<char*>(sendPacketBuffer_.front().get());
+                auto length = sizeof(PacketHeader) + pH->dataSize;
+
+                const auto& buf = boost::asio::buffer(data, length);
+                auto completedHandler = 
+                boost::bind(&Client::handle_write, shared_from_this(), boost::asio::placeholders::error);
+
+                boost::asio::async_write(socket_, buf, completedHandler);
             }
         }
 
         void handle_write(const boost::system::error_code& e){
             if(e){
                 std::cerr<<"socket write error: "<<e<<std::endl;
+                // close?
             }
             else{
-                // std::cout<<"write done"<<std::endl;
-                do_write();
+                packet_type packet = sendPacketBuffer_.next_packet();
+                if(packet != nullptr){
+                    PacketHeader* pH = reinterpret_cast<PacketHeader*>(packet.get());
+                    auto data = reinterpret_cast<char*>(packet.get());
+                    auto length = sizeof(PacketHeader) + pH->dataSize;
+
+                    const auto& buf = boost::asio::buffer(data, length);
+                    auto completedHandler = 
+                    boost::bind(&Client::handle_write, shared_from_this(), boost::asio::placeholders::error);
+
+                    boost::asio::async_write(socket_, buf, completedHandler);
+                }
             }
         }
 
-        std::shared_ptr<char> dequeue(){
-            lockObj.lock();
-            if(packets_.empty()){
-                lockObj.unlock();
-                return nullptr;
+        void do_read(){
+            PacketHeader* pHeader = reinterpret_cast<PacketHeader*>(read_buffer_);
+            pHeader->reset(); // set begin to zeros
+            const auto& buf = boost::asio::buffer(read_buffer_, sizeof(PacketHeader));
+            auto completedHandler = 
+            boost::bind(&Client::handle_read_header, shared_from_this(), boost::asio::placeholders::error);
+
+            boost::asio::async_read(socket_, buf, completedHandler);
+        }
+
+        void handle_read_header(const boost::system::error_code& e){
+            if((boost::asio::error::eof == e) ||
+                (boost::asio::error::connection_reset == e)){
+                std::cerr<<"disconnected:"<< e << std::endl;
+                started_.store(false);                
+                start(); // retry connect
+            }
+            else if(e){
+                std::cerr<<"read header error: "<< e << std::endl;                
             }
             else{
-                std::shared_ptr<char> v = packets_.front();
-                packets_.pop();
-                lockObj.unlock();
-                return v;
+                PacketHeader* pHeader = reinterpret_cast<PacketHeader*>(read_buffer_);
+                
+                if( strncmp(pHeader->begin, "begin", 5) == 0){
+                    const auto& buf = boost::asio::buffer(read_buffer_ + sizeof(PacketHeader), pHeader->dataSize);
+                    auto completedHandler = 
+                    boost::bind(&Client::handle_read_body, shared_from_this(), boost::asio::placeholders::error);
+
+                    boost::asio::async_read(socket_, buf, completedHandler);
+                }
+                else{
+                    std::cerr<<"not begin"<<std::endl;
+                    // restart read header
+                    do_read();
+                }
             }
         }
 
+        void handle_read_body(const boost::system::error_code& e){
+            
+            if((boost::asio::error::eof == e) ||
+                (boost::asio::error::connection_reset == e)){
+                std::cerr<<"disconnected:"<< e << std::endl;
+                started_.store(false);                
+                start();
+            }
+            else if(e){
+                std::cerr<<"read header error: "<< e << std::endl;                
+            }
+            else
+            {
+                //queue_receive_packet
+                PacketHeader* pHeader = reinterpret_cast<PacketHeader*>(read_buffer_);
+                
+                char* pEnd = read_buffer_ + sizeof(PacketHeader) + pHeader->dataSize - 3;
+                if( strncmp(pEnd, "end", 3) == 0){
+                    const size_t packetSize = sizeof(PacketHeader) + pHeader->dataSize;                        
+                    packet_type new_packet;
+                    new_packet.reset(new char[packetSize], charArrayDeletor);
+                    memcpy(new_packet.get(), read_buffer_,  packetSize);
+                    receivePacketBuffer_->enqueue(new_packet);
+                }
+                else{
+                    std::cerr<<"not end"<<std::endl;
+                }
+                
+                do_read(); // wait for another message
+            }
+        }
+
+    private:
         boost::asio::io_service service_;
         tcp::socket socket_;
         tcp::resolver resolver;
         std::string serverHost;
         std::string serverPort;
-        bool started_;
-        enum { max_msg = 32*1024*1024 };
-        char read_buffer_[max_msg];
-        char write_buffer_[max_msg];
-
-        std::mutex lockObj;
-        std::queue<std::shared_ptr<char>> packets_;
+        std::atomic<bool> started_;
+        enum { max_length = 12*1024*1024}; // 12MB
+        char read_buffer_[max_length];
+        
+        PacketSendBuffer sendPacketBuffer_;
+        std::shared_ptr<PacketReceiveBuffer> receivePacketBuffer_;
 };
 
 int main(int argc, char* argv[])
 {
-
     try{
         if( argc != 3){
             std::cerr<<"Usage: client <host> <port>"<<std::endl;
@@ -190,7 +233,9 @@ int main(int argc, char* argv[])
 
         const std::string host(argv[1]);
         const std::string port(argv[2]);
-        std::shared_ptr<Client> clientPtr = std::make_shared<Client>(host, port);
+        std::shared_ptr<PacketReceiveBuffer> receivePacketBuf = std::make_shared<PacketReceiveBuffer>(50);
+
+        std::shared_ptr<Client> clientPtr = std::make_shared<Client>(host, port, receivePacketBuf);
         
         std::thread socketThred([](std::shared_ptr<Client> clientPtr){
             clientPtr->start();
@@ -198,55 +243,70 @@ int main(int argc, char* argv[])
 
         }, clientPtr);
         
-        size_t cnt = 0;
+        std::thread sendThred([](std::shared_ptr<Client> clientPtr){
+            // 49152 = 128*128*3 = 48KB
+            // 230400 = 320x240 = 225KB
+            // 23082 = jpeg = 22KB
+            
+            cv::Mat imgTest = cv::imread("../images/test.bmp");
+            cv::resize(imgTest, imgTest, cv::Size(320, 240));
+            std::vector<int> qualityType;
+            qualityType.push_back(CV_IMWRITE_JPEG_QUALITY);
+            qualityType.push_back(80);
+            size_t cnt = 0;
 
-        /*
-        125MBPS
-        image = 128x128 = 16KB
-        12500
-        */
-        cv::Mat imgTest = cv::imread("../images/test.bmp");
-        cv::resize(imgTest, imgTest, cv::Size(320, 240));
-        std::vector<int> qualityType;
-        qualityType.push_back(CV_IMWRITE_JPEG_QUALITY);
-        qualityType.push_back(80);
-        /*
-        49152 = 128*128*3 = 48KB
-        230400 = 320x240 = 225KB
-        23082 = jpeg = 22KB
-        
-        */
+            while(true){
+
+                for( size_t i = 0; i < 4; ++i){
+                    cv::Mat img = imgTest.clone();
+                    cv::putText(img, std::to_string(cnt), cv::Point(20, 50), cv::FONT_HERSHEY_COMPLEX, 1.0, cv::Scalar(200, 70, 125), 4);
+
+                    std::vector<uchar> bufJPEG;
+                    cv::imencode(".jpg", img, bufJPEG, qualityType);
+
+                    //std::cout<<"size jpeg buf: "<< bufJPEG.size() << std::endl;
+                    //std::cout<<"size img: "<< img.rows * img.cols * img.channels() <<std::endl;
+                    int64_t camID = atoll(clientPtr->port().c_str()) * 10 + i;
+                    auto packet = makeJpgImagePacket(camID, 0, bufJPEG);
+                    //std::cout << camID + i << std::endl;
+
+                    if(packet == nullptr)
+                        continue;
+
+                    clientPtr->write(packet);
+                    cnt++;
+                    // cv::imshow("client send " + address, img);
+                    // int key = cv::waitKey(1);
+                    // if(key == 113)
+                    //     break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(50)); // 20 FPS
+            }
+        }, clientPtr);
+
+        std::this_thread::sleep_for(std::chrono::seconds(1)); // wait for creating socket
+        std::string address = clientPtr->port() + ":" + clientPtr->address();
 
         while(true){
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            auto packet = receivePacketBuf->dequeue();
+            if(packet != nullptr){
+                PacketHeader* header = reinterpret_cast<PacketHeader*>(packet.get());
+                if( header->purpose == PacketPurpose::ImageJpeg){
+                    cv::Mat img;
+                    int64_t cameraID, timeCode;
+                    const char* pData = reinterpret_cast<const char*>(packet.get() + sizeof(PacketHeader));
+                    parseJpgImagePacket(pData, img, cameraID, timeCode);
 
-            for( size_t i = 0; i < 8; ++i){
-                cv::Mat img = imgTest.clone();            
-                cv::putText(img, std::to_string(cnt), cv::Point(20, 50), cv::FONT_HERSHEY_COMPLEX, 1.0, cv::Scalar(200, 70, 125), 4);
-
-                std::vector<uchar> bufJPEG;
-                cv::imencode(".jpg", img, bufJPEG, qualityType);
-
-                //std::cout<<"size jpeg buf: "<< bufJPEG.size() << std::endl;
-                //std::cout<<"size img: "<< img.rows * img.cols * img.channels() <<std::endl;
-
-                auto packet = makeJpgImagePacket(0, 0, bufJPEG);
-
-                if(packet == nullptr)
-                    continue;
-
-                clientPtr->queue(packet);
-                cnt++;
-                // cv::imshow("client", img);
-                // int key = cv::waitKey(200);
-                // if(key == 113)
-                //     break;
+                    cv::imshow("client receive " + address, img);
+                    cv::waitKey(1);                    
+                }
             }
-            
-            std::this_thread::sleep_for(std::chrono::milliseconds(200)); // 5 FPS
         }
 
         clientPtr->stop();
         socketThred.join();
+        sendThred.join();
 
     }catch(std::exception& e){
         std::cerr<<e.what()<<std::endl;

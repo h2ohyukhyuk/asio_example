@@ -44,36 +44,33 @@ This Boost ASIO example shows how to communicate images and some information bet
   $ cat /proc/sys/net/ipv4/tcp_wmem
   ```
 
-  - modify buffer size to 32MBytes
+  - modify buffer size
   ```bash
 
+  # 500MB
 sudo sysctl -w net.ipv4.tcp_window_scaling="1"
-sudo sysctl -w net.core.rmem_default="85395200"
-sudo sysctl -w net.core.wmem_default="85395200"
-sudo sysctl -w net.core.rmem_max="85395200"
-sudo sysctl -w net.core.wmem_max="853952000"
-sudo sysctl -w net.ipv4.tcp_rmem="853952000 853952000 853952000"
-sudo sysctl -w net.ipv4.tcp_wmem="85395200 85395200 85395200"
-sudo sysctl -w net.ipv4.tcp_mem="8388608 8388608 8388608"
+sudo sysctl -w net.core.rmem_default="536862720"
+sudo sysctl -w net.core.wmem_default="536862720"
+sudo sysctl -w net.core.rmem_max="536862720"
+sudo sysctl -w net.core.wmem_max="536862720"
+  # min: 500MB, default: 500MB, max: 1GB
+sudo sysctl -w net.ipv4.tcp_rmem="536862720 1073725440 1073725440"
+sudo sysctl -w net.ipv4.tcp_wmem="536862720 1073725440 1073725440"
+  # min: 8GB, default: 16GB, max: 16GB (unit: 4,096 bytes)
+sudo sysctl -w net.ipv4.tcp_mem="2097152 4194304 4194304"
 
-sudo sysctl -w net.ipv4.tcp_window_scaling="1"
-sudo sysctl -w net.core.rmem_default="1073725440"
-sudo sysctl -w net.core.wmem_default="1073725440"
-sudo sysctl -w net.core.rmem_max="1073725440"
-sudo sysctl -w net.core.wmem_max="1073725440"
-sudo sysctl -w net.ipv4.tcp_rmem="85395200 1073725440 1073725440"
-sudo sysctl -w net.ipv4.tcp_wmem="85395200 1073725440 1073725440"
-sudo sysctl -w net.ipv4.tcp_mem="8388608 8388608 8388608"
-
-  $ sudo gedit /etc/sysctl.conf
-  net.core.rmem_default="1073725440"
-  net.core.wmem_default="1073725440"
-  net.core.rmem_max="1073725440"
-  net.core.wmem_max="1073725440"
-  net.ipv4.tcp_rmem="85395200 1073725440 1073725440"
-  net.ipv4.tcp_wmem="85395200 1073725440 1073725440"
-  net.ipv4.tcp_mem="8388608 8388608 8388608"
+  $ sudo gedit /etc/sysctl.conf  
+  # 500MB
   net.ipv4.tcp_window_scaling="1"
+  net.core.rmem_default="536862720"
+  net.core.wmem_default="536862720"
+  net.core.rmem_max="536862720"
+  net.core.wmem_max="536862720"
+  # min: 500MB, default: 500MB, max: 1GB
+  net.ipv4.tcp_rmem="536862720 1073725440 1073725440"
+  net.ipv4.tcp_wmem="536862720 1073725440 1073725440"
+  # min: 8GB, default: 16GB, max: 16GB (unit: 4,096 bytes)
+  net.ipv4.tcp_mem="2097152 4194304 4194304"
   ```
 
 ## Build

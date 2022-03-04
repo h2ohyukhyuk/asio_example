@@ -1,56 +1,83 @@
 
-#include "socket_sesseion.h"
+#include "socket_session.h"
+#include "socket_session_manager.h"
 #include <opencv2/opencv.hpp>
 
-class server
+class Server
 {
-public:
-  server(boost::asio::io_service& io_service, short port)
-  //boost 1.66이후 (Ubuntu 18.10 이후) 버전의 경우 io_context를 사용
-  //server(boost::asio::io_context& io_service, short port)
-    : io_service_(io_service),
-      //PORT 번호 등록
-      acceptor_(io_service, tcp::endpoint(tcp::v4(), port))
-  {
-    start_accept();
-  }
- 
-private:
-  void start_accept()
-  {
-    session* new_session = new session(io_service_);
-    //client로부터 접속될 때 까지 대기한다.
-    acceptor_.async_accept(new_session->socket(),
-        boost::bind(&server::handle_accept, this, new_session,
-          boost::asio::placeholders::error));
-  }
- 
-  //client로부터 접속이 되었을 때 해당 handler 함수를 실행한다.
-  void handle_accept(session* new_session,
-      const boost::system::error_code& error)
-  {
-    std::cout<<"new client connected"<<std::endl;
-    if (error)
+  public:
+    Server(short port, std::shared_ptr<PacketReceiveBuffer>& receiveBuffPtr)
+        //PORT 번호 등록
+        : acceptor_(io_service_, tcp::endpoint(tcp::v4(), port)),
+        sess_manager(),
+        receiveBuffPtr_(receiveBuffPtr)
     {
-        std::cerr<<"socket accept error: "<<error<<std::endl;
-        delete new_session;
+      start_accept();
     }
-    else
+
+    void run(){
+      io_service_.run();
+    }
+
+    void stop(){
+      io_service_.post(boost::bind(&Server::handle_stop, this));
+    }
+
+    // size_t broadcast(std::shared_ptr<char> packet) {
+    //       return for_each_active([packet](Session& c) { c.send(msg, true); });
+    // }
+  
+  private:
+    void start_accept()
     {
+      std::shared_ptr<Session> new_session(new Session(io_service_, sess_manager, receiveBuffPtr_));
+      //client로부터 접속될 때 까지 대기한다.
+      acceptor_.async_accept(new_session->socket(),
+          boost::bind(&Server::handle_accept, this, new_session,
+            boost::asio::placeholders::error));
+    }
+  
+    void handle_accept(std::shared_ptr<Session> new_session,
+        const boost::system::error_code& error)
+    {
+
+      if (error.value() == 125){
+        // closed
+        new_session.reset();
+      }
+      else if(error)
+      {
+          //std::cerr<<"socket accept error: "<<error<<std::endl;
+          new_session.reset();
+      }
+      else
+      {
+        std::string address = new_session->endpoint();
+        std::cout<<"connected: "<<address<<std::endl;
+
+        new_session->set_start();
         new_session->print_bufsize();
-        new_session->read();
+        new_session->do_read();
+        sess_manager.add(new_session);
+        start_accept();
+      }
     }
-    //client로부터 접속이 끊겼을 대 다시 대기한다.
-    start_accept();
-  }
- 
-  boost::asio::io_service& io_service_;
-  //boost 1.66이후 (Ubuntu 18.10 이후) 버전의 경우 io_context를 사용
-  //boost::asio::io_context &io_service_;
-  tcp::acceptor acceptor_;
+
+    void handle_stop()
+    {
+      acceptor_.close();
+      sess_manager.stop_all();
+    }
+
+    //boost 1.66 after (Ubuntu 18.10 after) version: io_service -> io_context
+    boost::asio::io_service io_service_;
+    tcp::acceptor acceptor_;
+    std::shared_ptr<PacketReceiveBuffer> receiveBuffPtr_;
+  public:
+    SessionManager sess_manager;
 };
  
- #if 1
+#if 1
 int main(int argc, char* argv[])
 {
   try
@@ -60,15 +87,40 @@ int main(int argc, char* argv[])
       std::cerr << "Usage: async_tcp_echo_server <port>\n";
       return 1;
     }
- 
-    boost::asio::io_service io_service;
-    //boost 1.66이후 (Ubuntu 18.10 이후) 버전의 경우 io_context를 사용
-    //boost::asio::io_context io_service;
- 
-    server s(io_service, atoi(argv[1]));
+    std::shared_ptr<PacketReceiveBuffer> receiveBuffPtr = std::make_shared<PacketReceiveBuffer>(100);
+    const short port = atoi(argv[1]);
+    std::shared_ptr<Server> serverPtr = std::make_shared<Server>(port, receiveBuffPtr);
+    
+    std::thread socketThred([](std::shared_ptr<Server> serverPtr){            
+            serverPtr->run();
 
-    //asio 통신을 시작한다.
-    io_service.run();
+        }, serverPtr);
+
+    while(true){
+      packet_type packet = receiveBuffPtr->dequeue();
+      if(packet != nullptr){
+        
+        PacketHeader* pH = reinterpret_cast<PacketHeader*>(packet.get());
+
+        if(pH->purpose == PacketPurpose::ImageJpeg){
+          cv::Mat img;
+          int64_t camID = 0;
+          int64_t timeCode = 0;
+          parseJpgImagePacket(packet.get()+sizeof(PacketHeader), img, camID, timeCode);
+          cv::imshow("server receive" + std::to_string(camID), img);
+          cv::waitKey(1);
+
+          serverPtr->sess_manager.send_all(packet);
+        }
+
+      }
+    }
+
+    // std::this_thread::sleep_for(std::chrono::seconds(10));
+    // std::cout<<"adfadsf"<<std::endl;
+
+    serverPtr->stop();
+    socketThred.join();
   }
   catch (std::exception& e)
   {

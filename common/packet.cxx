@@ -5,50 +5,7 @@ void charArrayDeletor(char* x){
     delete[] x;
 }
 
-std::shared_ptr<char> makeImagePacket(const int cameraID, const int timeCode, const cv::Mat& img){
-
-    const size_t imageSize = img.rows * img.cols * img.channels();
-
-    if(imageSize <= 0)
-        return nullptr;
-
-    const size_t dataSize = sizeof(PacketHeader) + sizeof(ImageData) + imageSize + 3;
-    std::shared_ptr<char> packet;
-    packet.reset(new char[dataSize], charArrayDeletor);
-
-    PacketHeader* pHeader = reinterpret_cast<PacketHeader*>(packet.get());
-    pHeader->begin[0] = 'b';
-    pHeader->begin[1] = 'e';
-    pHeader->begin[2] = 'g';
-    pHeader->begin[3] = 'i';
-    pHeader->begin[4] = 'n';
-
-    pHeader->purpose = PacketPurpose::Image;
-    pHeader->dataSize = dataSize - sizeof(PacketHeader) + 1;
-
-    ImageData* pImageData = reinterpret_cast<ImageData*>(packet.get() + sizeof(PacketHeader));
-    pImageData->cameraID = cameraID;
-    pImageData->timeCode = timeCode;
-    pImageData->width = img.cols;
-    pImageData->height = img.rows;
-    pImageData->channels = img.channels();
-    pImageData->rgbOrder[0] = 'b';
-    pImageData->rgbOrder[1] = 'g';
-    pImageData->rgbOrder[2] = 'r';
-
-    char* pImage = reinterpret_cast<char*>(packet.get() + sizeof(PacketHeader) + sizeof(ImageData));
-
-    memcpy(pImage, img.data, imageSize);
-
-    char* pEnd = pImage + imageSize;
-    pEnd[0] = 'e';
-    pEnd[1] = 'n';
-    pEnd[2] = 'd';
-
-    return packet;
-}
-
-std::shared_ptr<char> makeImageJoint2DPacket(const int cameraID, const int timeCode, const cv::Mat& img, std::vector<std::array<float, 2>> joint2Ds){
+packet_type makeImageJoint2DPacket(const int64_t cameraID, const int64_t timeCode, const cv::Mat& img, std::vector<std::array<float, 2>> joint2Ds){
 
     const size_t imageSize = img.rows * img.cols * img.channels();
     const size_t jontSize = sizeof(float)*2*joint2Ds.size();
@@ -96,7 +53,7 @@ std::shared_ptr<char> makeImageJoint2DPacket(const int cameraID, const int timeC
     return packet;
 }
 
-std::shared_ptr<char> makeJpgImagePacket(const int cameraID, const int timeCode, const std::vector<uchar>& data){
+packet_type makeJpgImagePacket(const int64_t cameraID, const int64_t timeCode, const std::vector<uchar>& data){
 
     const size_t dataSize = data.size();
 
@@ -120,6 +77,7 @@ std::shared_ptr<char> makeJpgImagePacket(const int cameraID, const int timeCode,
     ImageData* pImageData = reinterpret_cast<ImageData*>(packet.get() + sizeof(PacketHeader));
     pImageData->cameraID = cameraID;
     pImageData->timeCode = timeCode;
+    pImageData->dataSize = dataSize;
     // pImageData->width = 0;
     // pImageData->height = 0;
     // pImageData->channels = 0;
@@ -139,25 +97,15 @@ std::shared_ptr<char> makeJpgImagePacket(const int cameraID, const int timeCode,
     return packet;
 }
 
-bool parseImagePacket(const char* data, cv::Mat& img, int& cameraID, int& timeCode){
+
+bool parseJpgImagePacket(const char* data, cv::Mat& img, int64_t& cameraID, int64_t& timeCode){
     const ImageData* pImageData = reinterpret_cast<const ImageData*>(data);
     cameraID = pImageData->cameraID;
     timeCode = pImageData->timeCode;
+    
 
-    const char* pData = data + sizeof(ImageData);
-    const int imgH = pImageData->height;
-    const int imgW = pImageData->width;
-    const int imgC = pImageData->channels;
-    const int imgSize = imgH*imgW*imgC;
-
-    if(imgC == 3){
-        img = cv::Mat(imgH, imgW, CV_8UC3);
-    }
-    else if(imgC == 1){
-        img = cv::Mat(imgH, imgW, CV_8UC1);
-    }
-
-    memcpy(img.data, pData, imgSize);
+    char* pData = const_cast<char*>(data + sizeof(ImageData));
+    img = cv::imdecode(cv::Mat(1, pImageData->dataSize, CV_8UC1, pData), CV_LOAD_IMAGE_UNCHANGED);
     
     return true;
 }
