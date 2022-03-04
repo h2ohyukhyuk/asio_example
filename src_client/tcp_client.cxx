@@ -3,7 +3,6 @@
 #include <iostream>
 #include <chrono>
 #include <thread>
-#include <mutex>
 
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
@@ -177,7 +176,6 @@ class Client : public std::enable_shared_from_this<Client>{
         }
 
         void handle_read_body(const boost::system::error_code& e){
-
             if((boost::asio::error::eof == e) ||
                 (boost::asio::error::connection_reset == e)){
                 std::cerr<<"disconnected:"<< e << std::endl;
@@ -222,8 +220,7 @@ class Client : public std::enable_shared_from_this<Client>{
         std::shared_ptr<PacketReceiveBuffer> receivePacketBuffer_;
 };
 
-int main(int argc, char* argv[])
-{
+int main(int argc, char* argv[]){
     try{
         if( argc != 3){
             std::cerr<<"Usage: client <host> <port>"<<std::endl;
@@ -256,7 +253,6 @@ int main(int argc, char* argv[])
             size_t cnt = 0;
 
             while(true){
-
                 for( size_t i = 0; i < 4; ++i){
                     cv::Mat img = imgTest.clone();
                     cv::putText(img, std::to_string(cnt), cv::Point(20, 50), cv::FONT_HERSHEY_COMPLEX, 1.0, cv::Scalar(200, 70, 125), 4);

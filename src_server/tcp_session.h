@@ -2,12 +2,8 @@
 
 #include <cstdlib>
 #include <iostream>
-#include <chrono>
-#include <thread>
 #include <boost/bind.hpp>
 #include <boost/asio.hpp>
-#include <boost/asio/basic_stream_socket.hpp>
-
 #include <opencv2/opencv.hpp>
 
 #include "../common/tcp_packet.h"
