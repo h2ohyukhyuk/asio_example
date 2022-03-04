@@ -10,16 +10,16 @@
 
 #include <opencv2/opencv.hpp>
 
-#include "../common/packet.h"
+#include "../common/tcp_packet.h"
 
 using boost::asio::ip::tcp;
 
 class SessionManager;
- 
+
 class Session : public std::enable_shared_from_this<Session>
 {
     public:
-        Session(boost::asio::io_service& io_service, SessionManager& manager, 
+        Session(boost::asio::io_service& io_service, SessionManager& manager,
                 std::shared_ptr<PacketReceiveBuffer>& receivePacketBuffer)
         : socket_(io_service), sess_manager_(manager),
          receivePacketBuffer_(receivePacketBuffer), started_(false),
@@ -38,7 +38,7 @@ class Session : public std::enable_shared_from_this<Session>
             std::cout<<"receive buf size: "<<buf_size<<"MB"<<std::endl;
             return buf_size;
         }
-    
+
         tcp::socket& socket(){
             return socket_;
         }
@@ -61,13 +61,13 @@ class Session : public std::enable_shared_from_this<Session>
         void do_write();
         void handle_write(const boost::system::error_code& e);
         void handle_read_header(const boost::system::error_code& e);
-        void handle_read_body(const boost::system::error_code& e);        
+        void handle_read_body(const boost::system::error_code& e);
 
         tcp::socket socket_;
         std::atomic<bool> started_;
         enum { max_length = 12*1024*1024 }; // 12MB
         char read_buffer_[max_length];
-        
+
         unsigned int purpose;
         unsigned int dataSize;
         SessionManager& sess_manager_;

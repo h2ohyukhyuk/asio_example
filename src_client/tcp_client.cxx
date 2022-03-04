@@ -9,7 +9,7 @@
 #include <boost/bind.hpp>
 
 #include <opencv2/opencv.hpp>
-#include "../common/packet.h"
+#include "../common/tcp_packet.h"
 
 using namespace boost::asio;
 using boost::asio::ip::tcp;
@@ -21,7 +21,7 @@ class Client : public std::enable_shared_from_this<Client>{
     public:
     typedef boost::system::error_code error_code;
 
-    Client(const std::string& host, const std::string& port,            
+    Client(const std::string& host, const std::string& port,
             std::shared_ptr<PacketReceiveBuffer>& receivePacketBuffer)
             : socket_(service_), resolver(service_), serverHost(host), serverPort(port),
             receivePacketBuffer_(receivePacketBuffer), sendPacketBuffer_(50), started_(false)
@@ -36,7 +36,7 @@ class Client : public std::enable_shared_from_this<Client>{
         tcp::resolver::query query(serverHost, serverPort);
         tcp::resolver::iterator endpointIter = resolver.resolve(query);
 
-        auto completedHandler = 
+        auto completedHandler =
         boost::bind(&Client::handle_connected, shared_from_this(), boost::asio::placeholders::error);
 
         boost::asio::async_connect(socket_, endpointIter, completedHandler);
@@ -45,7 +45,7 @@ class Client : public std::enable_shared_from_this<Client>{
     void stop(){
         if(!started())
             return;
-       
+
         service_.post(boost::bind(&Client::do_close, shared_from_this()));
     }
 
@@ -58,20 +58,20 @@ class Client : public std::enable_shared_from_this<Client>{
     }
 
     std::string address(){
-        if(socket_.is_open()){            
+        if(socket_.is_open()){
             return socket_.local_endpoint().address().to_string();
         }
-        
+
         return "";
     }
 
     std::string port(){
-        if(socket_.is_open()){                
+        if(socket_.is_open()){
             //std::string address =  socket_.local_endpoint().address().to_string();
             std::string port = std::to_string(socket_.local_endpoint().port());
-            return port;            
+            return port;
         }
-        
+
         return "";
     }
 
@@ -104,13 +104,13 @@ class Client : public std::enable_shared_from_this<Client>{
 
         void do_write(packet_type packet){
             if( sendPacketBuffer_.is_first(packet)){
-                
+
                 PacketHeader* pH = reinterpret_cast<PacketHeader*>(sendPacketBuffer_.front().get());
                 auto data = reinterpret_cast<char*>(sendPacketBuffer_.front().get());
                 auto length = sizeof(PacketHeader) + pH->dataSize;
 
                 const auto& buf = boost::asio::buffer(data, length);
-                auto completedHandler = 
+                auto completedHandler =
                 boost::bind(&Client::handle_write, shared_from_this(), boost::asio::placeholders::error);
 
                 boost::asio::async_write(socket_, buf, completedHandler);
@@ -130,7 +130,7 @@ class Client : public std::enable_shared_from_this<Client>{
                     auto length = sizeof(PacketHeader) + pH->dataSize;
 
                     const auto& buf = boost::asio::buffer(data, length);
-                    auto completedHandler = 
+                    auto completedHandler =
                     boost::bind(&Client::handle_write, shared_from_this(), boost::asio::placeholders::error);
 
                     boost::asio::async_write(socket_, buf, completedHandler);
@@ -142,7 +142,7 @@ class Client : public std::enable_shared_from_this<Client>{
             PacketHeader* pHeader = reinterpret_cast<PacketHeader*>(read_buffer_);
             pHeader->reset(); // set begin to zeros
             const auto& buf = boost::asio::buffer(read_buffer_, sizeof(PacketHeader));
-            auto completedHandler = 
+            auto completedHandler =
             boost::bind(&Client::handle_read_header, shared_from_this(), boost::asio::placeholders::error);
 
             boost::asio::async_read(socket_, buf, completedHandler);
@@ -152,18 +152,18 @@ class Client : public std::enable_shared_from_this<Client>{
             if((boost::asio::error::eof == e) ||
                 (boost::asio::error::connection_reset == e)){
                 std::cerr<<"disconnected:"<< e << std::endl;
-                started_.store(false);                
+                started_.store(false);
                 start(); // retry connect
             }
             else if(e){
-                std::cerr<<"read header error: "<< e << std::endl;                
+                std::cerr<<"read header error: "<< e << std::endl;
             }
             else{
                 PacketHeader* pHeader = reinterpret_cast<PacketHeader*>(read_buffer_);
-                
+
                 if( strncmp(pHeader->begin, "begin", 5) == 0){
                     const auto& buf = boost::asio::buffer(read_buffer_ + sizeof(PacketHeader), pHeader->dataSize);
-                    auto completedHandler = 
+                    auto completedHandler =
                     boost::bind(&Client::handle_read_body, shared_from_this(), boost::asio::placeholders::error);
 
                     boost::asio::async_read(socket_, buf, completedHandler);
@@ -177,24 +177,24 @@ class Client : public std::enable_shared_from_this<Client>{
         }
 
         void handle_read_body(const boost::system::error_code& e){
-            
+
             if((boost::asio::error::eof == e) ||
                 (boost::asio::error::connection_reset == e)){
                 std::cerr<<"disconnected:"<< e << std::endl;
-                started_.store(false);                
+                started_.store(false);
                 start();
             }
             else if(e){
-                std::cerr<<"read header error: "<< e << std::endl;                
+                std::cerr<<"read header error: "<< e << std::endl;
             }
             else
             {
                 //queue_receive_packet
                 PacketHeader* pHeader = reinterpret_cast<PacketHeader*>(read_buffer_);
-                
+
                 char* pEnd = read_buffer_ + sizeof(PacketHeader) + pHeader->dataSize - 3;
                 if( strncmp(pEnd, "end", 3) == 0){
-                    const size_t packetSize = sizeof(PacketHeader) + pHeader->dataSize;                        
+                    const size_t packetSize = sizeof(PacketHeader) + pHeader->dataSize;
                     packet_type new_packet;
                     new_packet.reset(new char[packetSize], charArrayDeletor);
                     memcpy(new_packet.get(), read_buffer_,  packetSize);
@@ -203,7 +203,7 @@ class Client : public std::enable_shared_from_this<Client>{
                 else{
                     std::cerr<<"not end"<<std::endl;
                 }
-                
+
                 do_read(); // wait for another message
             }
         }
@@ -217,7 +217,7 @@ class Client : public std::enable_shared_from_this<Client>{
         std::atomic<bool> started_;
         enum { max_length = 12*1024*1024}; // 12MB
         char read_buffer_[max_length];
-        
+
         PacketSendBuffer sendPacketBuffer_;
         std::shared_ptr<PacketReceiveBuffer> receivePacketBuffer_;
 };
@@ -233,21 +233,21 @@ int main(int argc, char* argv[])
 
         const std::string host(argv[1]);
         const std::string port(argv[2]);
-        std::shared_ptr<PacketReceiveBuffer> receivePacketBuf = std::make_shared<PacketReceiveBuffer>(50);
+        std::shared_ptr<PacketReceiveBuffer> receivePacketBuf = std::make_shared<PacketReceiveBuffer>(100);
 
         std::shared_ptr<Client> clientPtr = std::make_shared<Client>(host, port, receivePacketBuf);
-        
+
         std::thread socketThred([](std::shared_ptr<Client> clientPtr){
             clientPtr->start();
             clientPtr->run();
 
         }, clientPtr);
-        
+
         std::thread sendThred([](std::shared_ptr<Client> clientPtr){
             // 49152 = 128*128*3 = 48KB
             // 230400 = 320x240 = 225KB
             // 23082 = jpeg = 22KB
-            
+
             cv::Mat imgTest = cv::imread("../images/test.bmp");
             cv::resize(imgTest, imgTest, cv::Size(320, 240));
             std::vector<int> qualityType;
@@ -284,13 +284,16 @@ int main(int argc, char* argv[])
             }
         }, clientPtr);
 
-        std::this_thread::sleep_for(std::chrono::seconds(1)); // wait for creating socket
-        std::string address = clientPtr->port() + ":" + clientPtr->address();
+        std::string address;
 
+        bool once = true;
         while(true){
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
             auto packet = receivePacketBuf->dequeue();
             if(packet != nullptr){
+                if(once){
+                    once = false;
+                    address = clientPtr->port() + ":" + clientPtr->address();
+                }
                 PacketHeader* header = reinterpret_cast<PacketHeader*>(packet.get());
                 if( header->purpose == PacketPurpose::ImageJpeg){
                     cv::Mat img;
@@ -299,7 +302,7 @@ int main(int argc, char* argv[])
                     parseJpgImagePacket(pData, img, cameraID, timeCode);
 
                     cv::imshow("client receive " + address, img);
-                    cv::waitKey(1);                    
+                    cv::waitKey(1);
                 }
             }
         }

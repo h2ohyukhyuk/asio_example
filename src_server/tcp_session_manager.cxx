@@ -1,8 +1,5 @@
-
-
-#include "socket_session.h"
-#include "socket_session_manager.h"
-
+#include "tcp_session.h"
+#include "tcp_session_manager.h"
 
 void SessionManager::add(std::shared_ptr<Session> s){
     std::lock_guard<std::mutex> lk(_mx);
@@ -18,12 +15,12 @@ void SessionManager::stop(std::shared_ptr<Session> s){
 
 /// Stop all connections.
 void SessionManager::stop_all(){
-    std::for_each(sessions_.begin(), sessions_.end(), 
+    std::for_each(sessions_.begin(), sessions_.end(),
     boost::bind(&Session::stop, _1));
     sessions_.clear();
 }
 
-void SessionManager::send_all(std::shared_ptr<char>& packet){    
+void SessionManager::send_all(std::shared_ptr<char>& packet){
     std::vector<std::shared_ptr<Session>> active;
     {
         std::lock_guard<std::mutex> lk(_mx);

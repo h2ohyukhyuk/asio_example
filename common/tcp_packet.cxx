@@ -1,5 +1,4 @@
-
-#include "packet.h"
+#include "tcp_packet.h"
 
 void charArrayDeletor(char* x){
     delete[] x;
@@ -43,13 +42,13 @@ packet_type makeImageJoint2DPacket(const int64_t cameraID, const int64_t timeCod
     for( size_t i = 0; i < pJoint2DData->numberJoint; ++i){
         pJoint2D[2*i] = joint2Ds[i][0];
         pJoint2D[2*i + 1] = joint2Ds[i][1];
-    }    
+    }
 
     char* pEnd = pImage + imageSize + sizeof(Joint2DData) + jontSize;
     pEnd[0] = 'e';
     pEnd[1] = 'n';
     pEnd[2] = 'd';
-    
+
     return packet;
 }
 
@@ -102,10 +101,10 @@ bool parseJpgImagePacket(const char* data, cv::Mat& img, int64_t& cameraID, int6
     const ImageData* pImageData = reinterpret_cast<const ImageData*>(data);
     cameraID = pImageData->cameraID;
     timeCode = pImageData->timeCode;
-    
+
 
     char* pData = const_cast<char*>(data + sizeof(ImageData));
     img = cv::imdecode(cv::Mat(1, pImageData->dataSize, CV_8UC1, pData), CV_LOAD_IMAGE_UNCHANGED);
-    
+
     return true;
 }

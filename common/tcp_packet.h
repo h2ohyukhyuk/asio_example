@@ -54,12 +54,12 @@ class PacketSendBuffer{
 
         bool is_first(packet_type packet){
             std::lock_guard<std::mutex> lg(lock_);
-            bool empty = packets_.empty();            
+            bool empty = packets_.empty();
 
             if(packets_.size() < maxPacketSize_){
                 packets_.push_back(packet);
             }
-            
+
             return empty;
         }
 
@@ -98,6 +98,7 @@ class PacketReceiveBuffer{
 
             if(packets_.size() > maxPacketSize_){
                 packets_.pop_front();
+                std::cerr<<"receive buf full"<<std::endl;
             }
             packets_.push_back(packet);
         }
