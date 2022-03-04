@@ -97,6 +97,7 @@ sudo sysctl -w net.ipv4.tcp_mem="2097152 4194304 4194304"
   or
   $ ./client localhost 8080
   ```
+  <img src="./images/result_screen_shot.png" width="641px" height="407px" title="result_screen_shot">
 ## Build Opencv from src
   ```bash
   $ cat /proc/cpuinfo | grep processor | wc -l
