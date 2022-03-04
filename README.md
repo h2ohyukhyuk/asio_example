@@ -43,6 +43,7 @@ Sever echoes all received images to all clients.
   - check current buffer size
   ```bash
   $ sysctl -a | grep "net.core.rmem\|net.core.wmem"
+  $ sysctl -a | grep "net.ipv4.tcp_rmem\|net.ipv4.tcp_wmem\|net.ipv4.tcp_mem"
   $ cat /proc/sys/net/ipv4/tcp_rmem
   $ cat /proc/sys/net/ipv4/tcp_wmem
   ```
