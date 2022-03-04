@@ -1,5 +1,8 @@
 ## Introduction
-This Boost ASIO example shows how to communicate images and some information between host and clients.
+This Boost ASIO example shows how to communicate images and some information between host and clients via tcp socket.
+Clients try to re-connect to server every 5 seconds.
+Clients send 4 JPEG compressed QVGA images to server every 50ms.
+Sever echos all received images to all clients.
 
 ## Perequisites
   - OS
@@ -59,7 +62,7 @@ sudo sysctl -w net.ipv4.tcp_wmem="536862720 1073725440 1073725440"
   # min: 8GB, default: 16GB, max: 16GB (unit: 4,096 bytes)
 sudo sysctl -w net.ipv4.tcp_mem="2097152 4194304 4194304"
 
-  $ sudo gedit /etc/sysctl.conf  
+  $ sudo gedit /etc/sysctl.conf
   # 500MB
   net.ipv4.tcp_window_scaling="1"
   net.core.rmem_default="536862720"
@@ -90,6 +93,8 @@ sudo sysctl -w net.ipv4.tcp_mem="2097152 4194304 4194304"
   - client
   ```bash
   $ ./client 127.0.0.1 8080
+  or
+  $ ./client localhost 8080
   ```
 ## Build Opencv from src
   ```bash
@@ -106,7 +111,7 @@ sudo sysctl -w net.ipv4.tcp_mem="2097152 4194304 4194304"
   $ sudo apt-get install libavcodec-dev libavformat-dev libswscale-dev libxvidcore-dev libx264-dev libxine2-dev
   $ sudo apt-get install libv4l-dev v4l-utils
   $ sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
-  $ sudo apt-get install libgtk2.0-dev 
+  $ sudo apt-get install libgtk2.0-dev
   another option libgtk-3-dev libqt4-dev libqt5-dev
   $ sudo apt-get install mesa-utils libgl1-mesa-dri libgtkgl2.0-dev libgtkglext1-dev
   $ sudo apt-get install libatlas-base-dev gfortran libeigen3-dev
