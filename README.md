@@ -2,7 +2,7 @@
 This Boost ASIO example shows how to communicate images and some information between host and clients via tcp socket.
 Clients try to re-connect to server every 5 seconds.
 Clients send 4 JPEG compressed QVGA images to server every 50ms.
-Sever echos all received images to all clients.
+Sever echoes all received images to all clients.
 
 ## Perequisites
   - OS
