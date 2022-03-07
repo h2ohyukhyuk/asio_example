@@ -17,7 +17,7 @@ Sever echoes all received images to all clients.
   - cmake
   ```bash
   $ sudo apt-get install libssl-dev openssl
-  $ wget https://github.com/Kitware/CMake/release/download/v3.19.2/cmake-3.19.2.tar.gz
+  $ wget https://github.com/Kitware/CMake/releases/download/v3.19.2/cmake-3.19.2.tar.gz
   $ tar -xvf cmake-3.19.2.tar.gz
   $ cd cmake-3.19.2
   $ ./bootstrap
