@@ -35,7 +35,7 @@ Sever echoes all received images to all clients.
   - opencv
   ```bash
   $ sudo apt update
-  $ sudo apt install python3-opencv
+  $ sudo apt install -y libopencv-dev python3-opencv
   $ pkg-config --modversion opencv
   3.2.0
   ```
